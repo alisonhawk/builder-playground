@@ -23,6 +23,9 @@ type L1Recipe struct {
 	// will run on the host machine. This is useful if you want to bind to the Reth database and you
 	// are running a host machine (i.e Mac) that is differerent from the docker one (Linux)
 	useNativeReth bool
+
+	// bootnodePrivKey is the private key used by the bootnode for P2P discovery
+	bootnodePrivKey string
 }
 
 func (l *L1Recipe) Name() string {
@@ -39,6 +42,7 @@ func (l *L1Recipe) Flags() *flag.FlagSet {
 	flags.BoolVar(&l.useRethForValidation, "use-reth-for-validation", false, "use reth for validation")
 	flags.Uint64Var(&l.secondaryELPort, "secondary-el", 0, "port to use for the secondary builder")
 	flags.BoolVar(&l.useNativeReth, "use-native-reth", false, "use the native reth binary")
+	flags.StringVar(&l.bootnodePrivKey, "bootnode-privkey", "", "private key for the bootnode (optional)")
 	return flags
 }
 
@@ -55,6 +59,7 @@ func (l *L1Recipe) Apply(ctx *ExContext, artifacts *Artifacts) *Manifest {
 	// Add bootnode service first
 	bootnode := &Bootnode{
 		DiscoveryPort: 30301,
+		PrivateKey:    l.bootnodePrivKey,
 	}
 	svcManager.AddService("bootnode", bootnode)
 
@@ -97,7 +102,7 @@ func (l *L1Recipe) Apply(ctx *ExContext, artifacts *Artifacts) *Manifest {
 	if l.useRethForValidation {
 		mevBoostValidationServer = "el"
 	}
-	
+
 	// Add mev-boost with dependency on beacon node
 	mevBoost := &MevBoostRelay{
 		BeaconClient:     "beacon",
