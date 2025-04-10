@@ -53,27 +53,33 @@ func (l *L1Recipe) Artifacts() *ArtifactsBuilder {
 	return builder
 }
 
+func (m *Manifest) AddServiceWithDeps(name string, service Service, deps ...string) {
+	m.AddService(name, service)
+	for _, dep := range deps {
+		m.MustGetService(name).DependsOnHealthy(dep)
+	}
+}
+
 func (l *L1Recipe) Apply(ctx *ExContext, artifacts *Artifacts) *Manifest {
 	svcManager := NewManifest(ctx, artifacts.Out)
 
-	// Add bootnode service first
+	// Register bootnode without dependency
 	bootnode := &Bootnode{
 		DiscoveryPort: 30301,
 		PrivateKey:    l.bootnodePrivKey,
 	}
 	svcManager.AddService("bootnode", bootnode)
 
+	// Register 'el' service with dependency on bootnode
 	el := &RethEL{
 		UseRethForValidation: l.useRethForValidation,
 		UseNativeReth:        l.useNativeReth,
 	}
-	svcManager.AddService("el", el)
-	svcManager.MustGetService("el").DependsOnHealthy("bootnode")
+	svcManager.AddServiceWithDeps("el", el, "bootnode")
 
 	var elService string
 	if l.secondaryELPort != 0 {
-		// we are going to use the cl-proxy service to connect the beacon node to two builders
-		// one the 'el' builder and another one the remote one
+		// Use cl-proxy service to connect the beacon node to two builders
 		elService = "cl-proxy"
 		svcManager.AddService("cl-proxy", &ClProxy{
 			PrimaryBuilder:   "el",
@@ -83,33 +89,30 @@ func (l *L1Recipe) Apply(ctx *ExContext, artifacts *Artifacts) *Manifest {
 		elService = "el"
 	}
 
-	// Add beacon node with dependency on bootnode
+	// Register beacon with dependency on bootnode
 	beacon := &LighthouseBeaconNode{
 		ExecutionNode: elService,
 		MevBoostNode:  "mev-boost",
 	}
-	svcManager.AddService("beacon", beacon)
-	svcManager.MustGetService("beacon").DependsOnHealthy("bootnode")
+	svcManager.AddServiceWithDeps("beacon", beacon, "bootnode")
 
-	// Add validator with dependency on beacon node
+	// Register validator with dependency on beacon
 	validator := &LighthouseValidator{
 		BeaconNode: "beacon",
 	}
-	svcManager.AddService("validator", validator)
-	svcManager.MustGetService("validator").DependsOnHealthy("beacon")
+	svcManager.AddServiceWithDeps("validator", validator, "beacon")
 
 	mevBoostValidationServer := ""
 	if l.useRethForValidation {
 		mevBoostValidationServer = "el"
 	}
 
-	// Add mev-boost with dependency on beacon node
+	// Register mev-boost with dependency on beacon
 	mevBoost := &MevBoostRelay{
 		BeaconClient:     "beacon",
 		ValidationServer: mevBoostValidationServer,
 	}
-	svcManager.AddService("mev-boost", mevBoost)
-	svcManager.MustGetService("mev-boost").DependsOnHealthy("beacon")
+	svcManager.AddServiceWithDeps("mev-boost", mevBoost, "beacon")
 
 	return svcManager
 }
